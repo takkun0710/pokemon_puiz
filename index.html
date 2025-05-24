@@ -1,0 +1,67 @@
+<script>
+  const MAX_POKEMON = 1025;
+  const pokemonNames = {};
+  let currentId = 1;
+  let total = 0;
+  let correct = 0;
+
+  async function preloadNames() {
+    document.getElementById("result").textContent = "ロード中…";
+    for (let i = 1; i <= MAX_POKEMON; i++) {
+      try {
+        const res = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${i}/`);
+        const data = await res.json();
+        const jpName = data.names.find(n => n.language.name === 'ja-Hrkt')?.name;
+        if (jpName) {
+          pokemonNames[i] = jpName;
+
+          // 最初の1匹読み込んだらすぐに表示！
+          if (Object.keys(pokemonNames).length === 1) {
+            nextPokemon();
+          }
+        }
+      } catch {
+        // エラーはスキップ
+      }
+    }
+
+    // 全ロード完了後に表示
+    if (Object.keys(pokemonNames).length > 0) {
+      document.getElementById("result").textContent = "";
+    } else {
+      document.getElementById("result").textContent = "ポケモンの読み込みに失敗しました…";
+    }
+  }
+
+  function nextPokemon() {
+    const ids = Object.keys(pokemonNames);
+    currentId = ids[Math.floor(Math.random() * ids.length)];
+    document.getElementById("pokemonImage").src =
+      `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${currentId}.png`;
+    document.getElementById("answerInput").value = "";
+    document.getElementById("result").textContent = "";
+  }
+
+  function checkAnswer() {
+    const input = document.getElementById("answerInput").value.trim();
+    total++;
+    if (input === pokemonNames[currentId]) {
+      correct++;
+      document.getElementById("result").textContent = "正解！すごいっ！";
+      document.getElementById("result").style.color = "#00c853";
+    } else {
+      document.getElementById("result").textContent = `ざんねん… 正解は「${pokemonNames[currentId]}」`;
+      document.getElementById("result").style.color = "#d32f2f";
+    }
+    updateStats();
+    setTimeout(nextPokemon, 2000);
+  }
+
+  function updateStats() {
+    const rate = ((correct / total) * 100).toFixed(1);
+    document.getElementById("stats").textContent =
+      `といたもんだい: ${total}問 / せいかい: ${correct}問 / せいとうりつ: ${rate}%`;
+  }
+
+  preloadNames();
+</script>
