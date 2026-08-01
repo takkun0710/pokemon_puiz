@@ -1,170 +1,497 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, user-scalable=no"
+  >
+
   <title>ポケモン名前クイズ</title>
+
   <style>
-    html, body {
+    html,
+    body {
+      width: 100%;
+      min-height: 100%;
       margin: 0;
       padding: 0;
-      overflow: hidden;
-      height: 100%;
-      background: linear-gradient(to bottom, #e0f7fa, #fff);
-      font-family: 'Segoe UI', sans-serif;
+    }
+
+    body {
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
+      overflow-x: hidden;
+      background: linear-gradient(to bottom, #e0f7fa, #fff);
+      font-family: "Segoe UI", "Noto Sans JP", sans-serif;
       text-align: center;
     }
 
     .container {
       width: 100%;
       max-width: 500px;
-      padding: 1em;
+      padding: 16px;
       box-sizing: border-box;
     }
 
     h1 {
-      margin-bottom: 0.5em;
-      font-size: 1.6em;
+      margin: 0 0 12px;
       color: #006064;
+      font-size: 1.6rem;
     }
 
-    img {
-      width: 60vw;
-      max-width: 300px;
-      height: auto;
-      margin-bottom: 1em;
+    .image-area {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: min(60vw, 300px);
+      aspect-ratio: 1 / 1;
+      margin: 0 auto 16px;
+      overflow: hidden;
+      background: white;
       border: 3px solid #26c6da;
       border-radius: 20px;
-      background: white;
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
     }
 
+    #pokemonImage {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    #loadingText {
+      position: absolute;
+      color: #006064;
+      font-weight: bold;
+    }
+
     input {
-      font-size: 1.2em;
-      padding: 10px;
       width: 80%;
       max-width: 300px;
+      margin-bottom: 10px;
+      padding: 10px;
+      box-sizing: border-box;
       border: 2px solid #26c6da;
       border-radius: 8px;
-      margin-bottom: 0.5em;
+      outline: none;
+      font-size: 1.2rem;
+      text-align: center;
+    }
+
+    input:focus {
+      border-color: #0097a7;
+      box-shadow: 0 0 0 3px rgba(38, 198, 218, 0.2);
     }
 
     button {
-      font-size: 1.1em;
-      background-color: #26c6da;
-      color: white;
       padding: 10px 20px;
       border: none;
       border-radius: 8px;
+      background-color: #26c6da;
+      color: white;
       cursor: pointer;
+      font-size: 1.1rem;
+      font-weight: bold;
     }
 
-    button:hover {
+    button:hover:not(:disabled) {
       background-color: #00acc1;
     }
 
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
     #result {
-      margin-top: 1em;
-      font-size: 1.2em;
+      min-height: 1.5em;
+      margin-top: 16px;
+      font-size: 1.2rem;
       font-weight: bold;
     }
 
     #stats {
-      margin-top: 0.5em;
-      font-size: 1em;
+      margin-top: 8px;
       color: #555;
+      font-size: 1rem;
+    }
+
+    #status {
+      min-height: 1.3em;
+      margin-top: 8px;
+      color: #777;
+      font-size: 0.9rem;
     }
   </style>
 </head>
+
 <body>
-  <div class="container">
+  <main class="container">
     <h1>ポケモン名前クイズ</h1>
-    <img id="pokemonImage" src="" alt="ロード中…" />
-    <input id="answerInput" type="text" placeholder="ポケモンの名前（カタカナ）" autocomplete="off" />
-    <br />
-    <button onclick="checkAnswer()">こたえる！</button>
-    <div id="result">ロード中…</div>
+
+    <div class="image-area">
+      <span id="loadingText">ロード中…</span>
+
+      <img
+        id="pokemonImage"
+        src=""
+        alt="ポケモンの画像"
+        hidden
+      >
+    </div>
+
+    <input
+      id="answerInput"
+      type="text"
+      placeholder="ポケモンの名前（カタカナ）"
+      autocomplete="off"
+      autocapitalize="off"
+      enterkeyhint="done"
+      disabled
+    >
+
+    <br>
+
+    <button id="answerButton" type="button" disabled>
+      こたえる！
+    </button>
+
+    <div id="result" aria-live="polite"></div>
     <div id="stats"></div>
-  </div>
+    <div id="status">問題を準備しています…</div>
+  </main>
 
   <script>
-    const MAX_POKEMON = 1025;
-    const pokemonNames = {};
-    let currentId = null;
-    let total = 0;
-    let correct = 0;
+    (() => {
+      const API_BASE = "https://pokeapi.co/api/v2";
+      const SPRITE_BASE =
+        "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork";
 
-    async function loadOnePokemon(id) {
-      try {
-        const res = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${id}/`);
-        const data = await res.json();
-        const jpName = data.names.find(n => n.language.name === 'ja-Hrkt')?.name;
-        if (jpName) {
-          pokemonNames[id] = jpName;
-          return true;
+      const REQUEST_TIMEOUT = 10000;
+      const NEXT_QUESTION_DELAY = 2000;
+
+      const pokemonImage = document.getElementById("pokemonImage");
+      const loadingText = document.getElementById("loadingText");
+      const answerInput = document.getElementById("answerInput");
+      const answerButton = document.getElementById("answerButton");
+      const resultEl = document.getElementById("result");
+      const statsEl = document.getElementById("stats");
+      const statusEl = document.getElementById("status");
+
+      const pokemonCache = new Map();
+      const usedIds = new Set();
+
+      let maxPokemon = 1025;
+      let currentPokemon = null;
+      let total = 0;
+      let correct = 0;
+      let isLoading = false;
+      let isAnswered = false;
+
+      async function fetchJSON(url) {
+        const controller = new AbortController();
+
+        const timeoutId = setTimeout(() => {
+          controller.abort();
+        }, REQUEST_TIMEOUT);
+
+        try {
+          const response = await fetch(url, {
+            signal: controller.signal,
+            cache: "no-store"
+          });
+
+          if (!response.ok) {
+            throw new Error(`通信エラー：HTTP ${response.status}`);
+          }
+
+          return await response.json();
+        } catch (error) {
+          if (error.name === "AbortError") {
+            throw new Error("通信がタイムアウトしました");
+          }
+
+          throw error;
+        } finally {
+          clearTimeout(timeoutId);
         }
-      } catch (e) {}
-      return false;
-    }
+      }
 
-    async function startGame() {
-      // 最初に1体読み込んで表示
-      let success = false;
-      while (!success) {
-        const id = Math.floor(Math.random() * MAX_POKEMON) + 1;
-        success = await loadOnePokemon(id);
-        if (success) {
-          currentId = id;
-          showPokemon(id);
-          document.getElementById("result").textContent = "";
+      async function getPokemonCount() {
+        try {
+          const data = await fetchJSON(
+            `${API_BASE}/pokemon-species?limit=1`
+          );
+
+          const count = Number(data.count);
+
+          if (Number.isInteger(count) && count > 0) {
+            maxPokemon = count;
+          }
+        } catch (error) {
+          console.warn(
+            "ポケモン総数を取得できなかったため、既定値を使用します。",
+            error
+          );
         }
       }
 
-      // 残りをバックグラウンドで読み込み
-      for (let i = 1; i <= MAX_POKEMON; i++) {
-        if (!pokemonNames[i]) loadOnePokemon(i);
+      function getJapaneseName(species) {
+        const names = Array.isArray(species.names)
+          ? species.names
+          : [];
+
+        const jaHrkt = names.find((item) => {
+          return item.language?.name === "ja-Hrkt";
+        });
+
+        const ja = names.find((item) => {
+          return item.language?.name === "ja";
+        });
+
+        return (
+          jaHrkt?.name ||
+          ja?.name ||
+          species.name ||
+          "名称不明"
+        );
       }
-    }
 
-    function showPokemon(id) {
-      document.getElementById("pokemonImage").src =
-        `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
-      document.getElementById("answerInput").value = "";
-    }
+      async function loadPokemon(id) {
+        if (pokemonCache.has(id)) {
+          return pokemonCache.get(id);
+        }
 
-    function checkAnswer() {
-      const input = document.getElementById("answerInput").value.trim();
-      total++;
-      if (input === pokemonNames[currentId]) {
-        correct++;
-        document.getElementById("result").textContent = "正解！すごいっ！";
-        document.getElementById("result").style.color = "#00c853";
-      } else {
-        document.getElementById("result").textContent = `ざんねん… 正解は「${pokemonNames[currentId]}」`;
-        document.getElementById("result").style.color = "#d32f2f";
+        const species = await fetchJSON(
+          `${API_BASE}/pokemon-species/${id}/`
+        );
+
+        const pokemon = {
+          id: Number(species.id),
+          name: getJapaneseName(species),
+          imageUrl: `${SPRITE_BASE}/${species.id}.png`
+        };
+
+        pokemonCache.set(id, pokemon);
+
+        return pokemon;
       }
-      updateStats();
 
-      // 次のポケモン
-      setTimeout(() => {
-        const ids = Object.keys(pokemonNames);
-        currentId = ids[Math.floor(Math.random() * ids.length)];
-        showPokemon(currentId);
-        document.getElementById("result").textContent = "";
-      }, 2000);
-    }
+      function getRandomId() {
+        if (usedIds.size >= maxPokemon) {
+          usedIds.clear();
+        }
 
-    function updateStats() {
-      const rate = ((correct / total) * 100).toFixed(1);
-      document.getElementById("stats").textContent =
-        `といたもんだい: ${total}問 / せいかい: ${correct}問 / せいとうりつ: ${rate}%`;
-    }
+        let id;
 
-    startGame();
+        do {
+          id = Math.floor(Math.random() * maxPokemon) + 1;
+        } while (usedIds.has(id));
+
+        usedIds.add(id);
+
+        return id;
+      }
+
+      function preloadImage(url) {
+        return new Promise((resolve, reject) => {
+          const image = new Image();
+
+          image.onload = () => resolve(url);
+          image.onerror = () => reject(
+            new Error("画像を読み込めませんでした")
+          );
+
+          image.src = url;
+        });
+      }
+
+      function setControlsEnabled(enabled) {
+        answerInput.disabled = !enabled;
+        answerButton.disabled = !enabled;
+      }
+
+      function showLoading(message = "ロード中…") {
+        isLoading = true;
+        setControlsEnabled(false);
+
+        pokemonImage.hidden = true;
+        pokemonImage.removeAttribute("src");
+
+        loadingText.hidden = false;
+        loadingText.textContent = message;
+
+        statusEl.textContent = "問題を準備しています…";
+      }
+
+      function showError(message) {
+        resultEl.textContent = `エラー：${message}`;
+        resultEl.style.color = "#d32f2f";
+
+        loadingText.hidden = false;
+        loadingText.textContent = "読み込み失敗";
+
+        statusEl.textContent =
+          "自動で別のポケモンを読み込みます。";
+      }
+
+      async function showNextPokemon() {
+        if (isLoading) return;
+
+        showLoading();
+        resultEl.textContent = "";
+        answerInput.value = "";
+        isAnswered = false;
+
+        try {
+          let pokemon = null;
+          let lastError = null;
+
+          // 欠番や画像エラーに備えて最大5回試す
+          for (let attempt = 0; attempt < 5; attempt++) {
+            const id = getRandomId();
+
+            try {
+              const loadedPokemon = await loadPokemon(id);
+              await preloadImage(loadedPokemon.imageUrl);
+
+              pokemon = loadedPokemon;
+              break;
+            } catch (error) {
+              lastError = error;
+              console.warn(
+                `ID ${id} の読み込みに失敗しました。`,
+                error
+              );
+            }
+          }
+
+          if (!pokemon) {
+            throw lastError || new Error(
+              "ポケモンを取得できませんでした"
+            );
+          }
+
+          currentPokemon = pokemon;
+
+          pokemonImage.src = pokemon.imageUrl;
+          pokemonImage.alt = "名前を当てるポケモン";
+          pokemonImage.hidden = false;
+
+          loadingText.hidden = true;
+          statusEl.textContent =
+            `全${maxPokemon}種から出題しています。`;
+
+          setControlsEnabled(true);
+          answerInput.focus();
+        } catch (error) {
+          console.error(error);
+          showError(error.message || "取得に失敗しました");
+
+          setTimeout(() => {
+            isLoading = false;
+            showNextPokemon();
+          }, 2000);
+
+          return;
+        }
+
+        isLoading = false;
+      }
+
+      function normalizeAnswer(text) {
+        return text
+          .trim()
+          .replace(/\s+/g, "")
+          .normalize("NFKC");
+      }
+
+      function checkAnswer() {
+        if (
+          isLoading ||
+          isAnswered ||
+          !currentPokemon
+        ) {
+          return;
+        }
+
+        const input = normalizeAnswer(answerInput.value);
+
+        if (!input) {
+          resultEl.textContent =
+            "ポケモンの名前を入力してください。";
+          resultEl.style.color = "#f57c00";
+          answerInput.focus();
+          return;
+        }
+
+        isAnswered = true;
+        total++;
+
+        const correctName = normalizeAnswer(
+          currentPokemon.name
+        );
+
+        if (input === correctName) {
+          correct++;
+
+          resultEl.textContent = "正解！すごいっ！";
+          resultEl.style.color = "#00c853";
+        } else {
+          resultEl.textContent =
+            `ざんねん… 正解は「${currentPokemon.name}」`;
+          resultEl.style.color = "#d32f2f";
+        }
+
+        updateStats();
+        setControlsEnabled(false);
+
+        statusEl.textContent =
+          "次の問題を準備しています…";
+
+        setTimeout(() => {
+          showNextPokemon();
+        }, NEXT_QUESTION_DELAY);
+      }
+
+      function updateStats() {
+        const rate = total > 0
+          ? ((correct / total) * 100).toFixed(1)
+          : "0.0";
+
+        statsEl.textContent =
+          `といたもんだい: ${total}問 / ` +
+          `せいかい: ${correct}問 / ` +
+          `せいとうりつ: ${rate}%`;
+      }
+
+      answerButton.addEventListener(
+        "click",
+        checkAnswer
+      );
+
+      answerInput.addEventListener(
+        "keydown",
+        (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            checkAnswer();
+          }
+        }
+      );
+
+      async function startGame() {
+        updateStats();
+        await getPokemonCount();
+        await showNextPokemon();
+      }
+
+      startGame();
+    })();
   </script>
 </body>
 </html>
